@@ -52,3 +52,24 @@ def build_query_rewrite_prompt(query: str,history_text:str) -> str:
     对话历史：{history_text}
     用户问题：{query}
     """
+
+def build_extract_prompt(query: str) -> str:
+    return f"""
+    从用户的问题中提取值得长期记住的个人信息或偏好，例如：称呼、岗位、关注范围、回答风格要求等。
+    只输出一个 JSON 对象，不要输出任何解释、前言或 markdown 代码块。
+    示例：
+    用户问题：我喜欢简短直接的回答，以后叫我小李。
+    输出：{{"称呼": "小李", "偏好": "简短直接的回答"}}
+    用户问题：今天天气怎么样？
+    输出：{{}}
+    现在处理下面的问题，只输出 JSON：
+    用户问题：{query}
+    """
+
+# def extract_preferences(query : str) -> dict:
+#     return f"""从用户问题里提取值得长期记住的个人信息/偏好（称呼、岗位、关注范围、回答风格要求等）
+#     只输出 JSON，不要解释、不要 markdown 代码块
+#     格式：{{"称呼": "小刘", "偏好": "简洁回答"}}
+#     没提取到就输出空字典
+#     问题:{query}
+#     """

@@ -3,13 +3,13 @@
 # 3. 调用摘要 prompt
 # 4. 调用 chat
 # 5. 返回摘要
-
+from config.settings import HISTORY_COMPRESS_THRESHOLD
 import tiktoken
 enc = tiktoken.get_encoding("cl100k_base")   #使用OpenAI用的编码
 def count_tokens(text):
     return len(enc.encode(text))
 
-HISTORY_COMPRESS_THRESHOLD = 2000
+
 def count_token(messages : list[dict]) -> int:
     total_count = 0
     for message in messages:

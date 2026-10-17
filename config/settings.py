@@ -13,3 +13,5 @@ OLLAMA_BASE_URL =  "http://localhost:11434"
 MODEL_NAME = "qwen3:8b"
 MAX_TOKENS = 1000
 API_KEY = "ollama"
+HISTORY_COMPRESS_THRESHOLD = 2000
+USER_ID ="default_user"
