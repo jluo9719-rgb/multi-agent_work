@@ -6,6 +6,8 @@ from tools.search_tool import search_google
 from tools.tool_selector import select_tools
 from memory.preference_store import load_preferences,format_preferences
 from config.settings import USER_ID
+from rag.query_processor import build_search_queries
+from rag.retrieve import retrieve_context
 load_dotenv()
 
 def check_sufficiency(messages:list[dict]) -> tuple[bool,str]:
@@ -104,9 +106,11 @@ def run_agent(query: str, history: list[dict], max_rounds: int = 5) -> str:
         # —— 反思：资料够不够 ——
         need_retry,new_query =check_sufficiency(messages)
         if need_retry:
-            docs = retrieve_one_query(new_query)
+            #用完整的多query检索链路（拆分+扩写+合并重排）
+            search_queries =build_search_queries(new_query)
+            docs_text = retrieve_context(new_query,search_queries)
             messages.append({
                 "role":"user",
-                "content":f"补充检索结果（关键词：{new_query}）：\n" + "\n\n".join(docs),
+                "content": f"补充检索结果（关键词：{new_query}）：\n{docs_text}",
             })
     return "超过最大轮数"
