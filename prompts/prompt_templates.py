@@ -73,3 +73,4 @@ def build_extract_prompt(query: str) -> str:
 #     没提取到就输出空字典
 #     问题:{query}
 #     """
+

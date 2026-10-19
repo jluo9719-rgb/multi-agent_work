@@ -34,10 +34,10 @@ from memory.conversation_summarizer import compress_history
 from memory.preference_extractor import extract_preferences
 from memory.preference_store import save_preferences
 from config.settings import USER_ID
+from agents.agent_loop import run_agent
+from memory.session_store import save_session,load_session
 def main():
-    print("多agent协作项目启动成功。")
-    print("当前阶段：测试LLM调用")
-    history =[]
+    history = load_session()
     while True:
         query = input("\n请输入问题，输入q退出：")
         if query.lower()== "q":
@@ -48,8 +48,9 @@ def main():
             save_preferences(USER_ID,prefs)
         history.append({"role":"user","content":query})
         history = compress_history(history)
-        answer = answer_with_rag(query,history)
+        answer = run_agent(query,history)
         history.append({"role":"assistant","content":answer})
+        save_session(history)
         print(answer)
 
 if __name__=="__main__":

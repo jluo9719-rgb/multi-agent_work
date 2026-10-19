@@ -1,11 +1,33 @@
-from llm.ollama_client import chat_with_tools
-from tools.tool_definitions import TOOLS, RagInput,SearchInput
+from llm.ollama_client import chat_with_tools,chat_with_system
+from tools.tool_definitions import RagInput,SearchInput
 from rag.retrieve import retrieve_one_query
-from pydantic import ValidationError
 from dotenv import load_dotenv
 from tools.search_tool import search_google
 from tools.tool_selector import select_tools
 load_dotenv()
+
+def check_sufficiency(messages:list[dict]) -> tuple[bool,str]:
+    """
+    判断当前检索结果能否回答用户问题，
+    返回（是否需要补充检索，新查询词）
+    """
+    fanwen_prompt ="""
+    你当前的检索结果能回答用户的问题吗？
+    如果能，请只回答：YES
+    如果不能，请按照格式回答：NO，新查询：你的新关键词
+    """
+    reflection_message =messages+[{"role":"user","content":fanwen_prompt}]
+    reflection_text = chat_with_system(
+        reflection_message,
+        system="你是专门检测检索结果能否回答用户问题的",
+    )
+    print(f"[反思] {reflection_text}")
+    if "YES" in reflection_text:
+        return False,""
+    new_query = reflection_text.split("新查询：")[-1].strip()
+    if len(new_query)<2:
+        return False,""
+    return True,new_query
 
 def run_agent(query: str, history: list[dict], max_rounds: int = 5) -> str:
     messages = history + [{"role": "user", "content": query}]
@@ -51,11 +73,12 @@ def run_agent(query: str, history: list[dict], max_rounds: int = 5) -> str:
                     "content": result,
                 }],
             })
+        # —— 反思：资料够不够 ——
+        need_retry,new_query =check_sufficiency(messages)
+        if need_retry:
+            docs = retrieve_one_query(new_query)
+            messages.append({
+                "role":"user",
+                "content":f"补充检索结果（关键词：{new_query}）：\n" + "\n\n".join(docs),
+            })
     return "超过最大轮数"
-
-if __name__ == "__main__":
-    print("=== 内部文档 ===")
-    print(run_agent("子公司的管理制度是什么？", []))
-
-    print("\n=== 网络搜索 ===")
-    print(run_agent("今天上海的天气怎么样？", []))
