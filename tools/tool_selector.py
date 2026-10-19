@@ -1,9 +1,12 @@
 import chromadb
 from tools.tool_definitions import TOOLS
 from rag.knowledge_base import embedder   #复用已加载的embedder，不需要重新加载
-
+import os
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CHROMA_PATH = os.path.join(BASE_DIR, "chroma_db")
 #模块加载时初始化
-tool_client =chromadb.PersistentClient(path="./chroma_db")
+tool_client = chromadb.PersistentClient(path=CHROMA_PATH)
+
 tool_collection = tool_client.get_or_create_collection(name ="tool")
 description_to_schema = {}
 

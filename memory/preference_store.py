@@ -5,7 +5,7 @@
 import os
 import sqlite3
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "entity_memory.db")
 
 #模块加载时建表(IF NOT EXIST 保证不重复运行不报错)
@@ -20,7 +20,28 @@ cursor.execute("""
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP 
             )
     """)
-conn.commit()
+try:
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_user_entity
+        ON entities(user_id, entity_key)
+        """)
+    conn.commit()
+except sqlite3.IntegrityError:
+    # 旧数据有重复，自动清理后重建索引
+    # 保留每组 (user_id, entity_key) 中 id 最小的一行，删除其余
+    cursor.execute("""
+        DELETE FROM entities
+        WHERE id NOT IN (
+            SELECT MIN(id) FROM entities GROUP BY user_id, entity_key
+        )
+        """)
+    conn.commit()
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_user_entity
+        ON entities(user_id, entity_key)
+        """)
+    conn.commit()
+
 
 def save_preferences(user_id : str,prefs : dict) -> None:   #将prefs这个字典存入sqlite
     #遍历prefs，每队key/value执行INSERT OR REPLACE 

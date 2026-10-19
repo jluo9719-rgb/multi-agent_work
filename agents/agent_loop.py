@@ -4,6 +4,8 @@ from rag.retrieve import retrieve_one_query
 from dotenv import load_dotenv
 from tools.search_tool import search_google
 from tools.tool_selector import select_tools
+from memory.preference_store import load_preferences,format_preferences
+from config.settings import USER_ID
 load_dotenv()
 
 def check_sufficiency(messages:list[dict]) -> tuple[bool,str]:
@@ -30,10 +32,36 @@ def check_sufficiency(messages:list[dict]) -> tuple[bool,str]:
     return True,new_query
 
 def run_agent(query: str, history: list[dict], max_rounds: int = 5) -> str:
-    messages = history + [{"role": "user", "content": query}]
-    system_prompt = "你是公司查询制度的智能体"
+    #每次调用都重新读取偏好（用户可能在上一轮补充了偏好）
+    prefs = load_preferences(USER_ID)
+    if prefs:
+        prefs_text = "已知用户信息：\n" + format_preferences(prefs)
+    else:
+        prefs_text = ""
 
+    messages = history + [{"role": "user", "content": query}]
+    system_prompt = f"""
+    你是公司的专业智能客服。回答用户问题时遵循以下原则：
+    1. 优先使用工具检索到的文档信息；文档中明确提到不同做法时详细总结，相同做法时如实告知。
+    2. 允许根据文档内容进行合理归纳和对比，但不要脱离检索结果虚构事实。
+    3. 若检索结果完全未提及相关主题，再如实回答不知道。
+    4. 历史对话的使用规则：
+       - 当用户当前问题中出现"继续"、"刚才"、"上面"、"它"、"这个"等指向上文或需要上下文的表述时，结合历史对话回答；
+       - 当用户的问题是全新的独立陈述或提问时，只回答当前内容，不要主动延续历史话题。
+    5. 需要同时查询公司文档和其他信息时，请在同一轮次中调用所有相关工具，不要只调用一个。
+    {prefs_text}
+    语气要平易近人。
+    """
     for i in range(max_rounds):
+        # ① 看给了模型哪些工具
+        selected = select_tools(query)
+        print(f"[工具筛选] {[t['name'] for t in selected]}")
+
+        response = chat_with_tools(messages, selected, system_prompt)
+        content = response.get("content", [])
+
+        # ② 看模型这轮干什么
+        print(f"[第{i+1}轮] stop_reason={response.get('stop_reason')}")
         response = chat_with_tools(messages, select_tools(query), system_prompt)
         content = response.get("content", [])
 

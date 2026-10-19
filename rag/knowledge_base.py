@@ -1,5 +1,5 @@
-import re
 import os
+import re
 import shutil
 
 import chromadb
@@ -10,7 +10,11 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from rag import cache_utils
 
+# 路径钉死到项目根目录，不受运行目录影响
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CHROMA_PATH = os.path.join(BASE_DIR, "chroma_db")
 
+client_chromadb = chromadb.PersistentClient(path=CHROMA_PATH)
 embedder = SentenceTransformer("moka-ai/m3e-base")
 
 #粗切
@@ -80,14 +84,13 @@ cache_valid = cache_utils.is_cache_valid()
 vector_valid = cache_utils.is_vectorstore_valid()
 
 if cache_valid and vector_valid:
-    client_chromadb = chromadb.PersistentClient(path="./chroma_db")
+    # client 已在顶部创建，直接获取 collection
     collection = client_chromadb.get_or_create_collection(name="ljs")
-
 else:
-    if os.path.exists("./chroma_db"):
-        shutil.rmtree("./chroma_db")
-
-    client_chromadb = chromadb.PersistentClient(path="./chroma_db")
+    # 需要重建：删除旧目录后重新创建 client 和 collection
+    if os.path.exists(CHROMA_PATH):
+        shutil.rmtree(CHROMA_PATH)
+    client_chromadb = chromadb.PersistentClient(path=CHROMA_PATH)
     collection = client_chromadb.get_or_create_collection(name="ljs")
 
     ids = [f"id_policy_{i}" for i in range(len(chunks))]

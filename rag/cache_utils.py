@@ -12,8 +12,9 @@ import hashlib
 # 1. 缓存目录和版本号配置
 # ============================================================
 
-# 缓存文件存放目录（相对于当前工作目录）
-CACHE_DIR = "./cache"
+# 缓存文件存放目录（钉死到项目根目录，不受运行目录影响）
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CACHE_DIR = os.path.join(BASE_DIR, "cache")
 
 # 缓存文件路径
 CHUNKS_CACHE_FILE = os.path.join(CACHE_DIR, "chunks_cache.json")  # chunks 缓存：存储切分后的文本块
@@ -92,7 +93,8 @@ def is_vectorstore_valid():
       - chroma_db 目录存在
       - vector_version.txt 存在且版本号匹配
     """
-    if not os.path.exists("./chroma_db"):
+    chroma_path = os.path.join(BASE_DIR, "chroma_db")
+    if not os.path.exists(chroma_path):
         return False
     version_file = os.path.join(CACHE_DIR, "vector_version.txt")
     if not os.path.exists(version_file):
