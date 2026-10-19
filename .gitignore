@@ -3,3 +3,4 @@ cache/
 __pycache__/
 entity_memory.db
 **/entity_memory.db
+.env

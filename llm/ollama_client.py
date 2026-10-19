@@ -29,7 +29,7 @@ ollama模型调用封装
 #     data = response.json()
 #     return data["message"]["content"]
 
-
+import requests
 from config.settings import OLLAMA_BASE_URL,MODEL_NAME,MAX_TOKENS,API_KEY
 from anthropic import Anthropic
 client = Anthropic(
@@ -55,3 +55,31 @@ def chat_with_history(messages : list[dict]) -> str:
         messages = messages,
     )
     return response.content[-1].text
+
+def chat_with_tools(messages : list[dict],tools:list,system : str="") -> object:
+    """
+    带工具调用：直接用 requests 请求 Ollama 的 Anthropic 兼容接口。
+    Anthropic SDK 在 Ollama 兼容层上会 502，因此这里绕过 SDK。
+    返回 dict（JSON 响应），而不是 SDK 对象。
+    """
+    payload = {
+        "model": MODEL_NAME,
+        "max_tokens": MAX_TOKENS,
+        "messages": messages,
+        "tools": tools,
+    }
+    if system:
+        payload['system'] =system
+    response = requests.post(
+        f"{OLLAMA_BASE_URL}/v1/messages",   # ← settings 里的地址
+        headers={
+            "Content-Type":"application/json",
+            "x-api-key":API_KEY,            # ← settings 里的 "ollama"
+            "anthropic-version":"2023-06-01",  # ← 固定值，Anthropic 协议要求的版本号
+        }, 
+        json= payload,
+        timeout=120,
+    )
+    response.raise_for_status()
+    return response.json()
+
