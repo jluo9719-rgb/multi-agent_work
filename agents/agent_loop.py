@@ -1,4 +1,4 @@
-from llm.ollama_client import chat_with_tools,chat_with_system
+from llm.ollama_client import chat_with_tools,chat_with_system,chat_stream_with_tools
 from tools.tool_definitions import RagInput,SearchInput
 from rag.retrieve import retrieve_one_query
 from dotenv import load_dotenv
@@ -33,6 +33,7 @@ def check_sufficiency(messages:list[dict]) -> tuple[bool,str]:
         return False,""
     return True,new_query
 
+#普通函数，返回字符串
 def run_agent(query: str, history: list[dict], max_rounds: int = 5) -> str:
     #每次调用都重新读取偏好（用户可能在上一轮补充了偏好）
     prefs = load_preferences(USER_ID)
@@ -59,7 +60,7 @@ def run_agent(query: str, history: list[dict], max_rounds: int = 5) -> str:
     语气要平易近人。
     """
     for i in range(max_rounds):
-        # ① 看给了模型哪些工具
+        # ① 看给了模型哪些工具  调试的时候看的
         selected = select_tools(query)
         print(f"[工具筛选] {[t['name'] for t in selected]}")
 
@@ -69,13 +70,95 @@ def run_agent(query: str, history: list[dict], max_rounds: int = 5) -> str:
         # ② 看模型这轮干什么
         print(f"[第{i+1}轮] stop_reason={response.get('stop_reason')}")
         response = chat_with_tools(messages, select_tools(query), system_prompt)
-        content = response.get("content", [])
+        content = response.get("content", [])   #这是我们调试的时候看的
 
         if response.get("stop_reason") != "tool_use":
             for block in reversed(content):
                 if block.get("type") == "text":
                     return block["text"]
             return "没有拿到文本回答"
+
+        # —— 模型要求调工具 ——
+        messages.append({"role": "assistant", "content": content})
+
+        for block in content:
+            if block.get("type") != "tool_use":
+                continue
+            if block["name"] == "retrieve_company_docs":
+                try:
+                    valid = RagInput(**block["input"])
+                    docs = retrieve_one_query(valid.query)
+                    result = "\n\n".join(docs)
+                except Exception as e:
+                    result = f"检索失败：{e}"
+            elif block["name"] == "search_google":
+                try:
+                    valid = SearchInput(**block["input"])
+                    result = search_google(valid.query)
+                except Exception as e:
+                    result = f"搜索失败：{e}"
+            else:
+                result = f"未知工具：{block['name']}"
+
+            messages.append({
+                "role": "user",
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": block["id"],
+                    "content": result,
+                }],
+            })
+        # —— 反思：资料够不够 ——
+        need_retry,new_query =check_sufficiency(messages)
+        if need_retry:
+            #用完整的多query检索链路（拆分+扩写+合并重排）
+            search_queries =build_search_queries(new_query)
+            docs_text = retrieve_context(new_query,search_queries)
+            messages.append({
+                "role":"user",
+                "content": f"补充检索结果（关键词：{new_query}）：\n{docs_text}",
+            })
+    return "超过最大轮数"
+
+
+#流式。函数生成器，yield 文字碎片
+def run_agent_stream(query: str, history: list[dict], max_rounds: int = 5):
+    #每次调用都重新读取偏好（用户可能在上一轮补充了偏好）
+    prefs = load_preferences(USER_ID)
+    if prefs:
+        prefs_text = "已知用户信息：\n" + format_preferences(prefs)
+    else:
+        prefs_text = ""
+
+    messages = history + [{"role": "user", "content": query}]
+    system_prompt = f"""
+    你是公司的专业智能客服。回答用户问题时遵循以下原则：
+    1. 优先使用工具检索到的文档信息；文档中明确提到不同做法时详细总结，相同做法时如实告知。
+    2. 允许根据文档内容进行合理归纳和对比，但不要脱离检索结果虚构事实。
+    3. 若检索结果完全未提及相关主题，再如实回答不知道。
+    4. 历史对话的使用规则：
+       - 当用户当前问题中出现"继续"、"刚才"、"上面"、"它"、"这个"等指向上文或需要上下文的表述时，结合历史对话回答；
+       - 当用户的问题是全新的独立陈述或提问时，只回答当前内容，不要主动延续历史话题；
+       - 当用户要求"继续"或追问更多细节时，必须先调用 retrieve_company_docs 工具检索该主题的资料，
+         基于新检索到的资料补充回答，不要凭记忆自由发挥；
+         如果检索结果确认资料已穷尽，如实告知用户"手册中相关内容已全部呈现"。
+       - 任何回答中出现的具体数字、制度名称、流程细节，必须来自本次或之前工具返回的检索结果。
+    5. 需要同时查询公司文档和其他信息时，请在同一轮次中调用所有相关工具，不要只调用一个。
+    {prefs_text}
+    语气要平易近人。
+    """
+    for i in range(max_rounds):
+        response = None
+        for kind, payload in chat_stream_with_tools(messages, select_tools(query), system_prompt):
+            if kind == "text":
+                yield payload          # ← 文字直接往外传（不 return）
+            elif kind == "done":
+                response = payload     # ← 结构化结果，留给后面的决策逻辑
+
+        content = response.get("content", [])
+        #  不是工具调用 → 回答完了，直接结束
+        if response.get("stop_reason") != "tool_use":
+            return                     # ← 注意：不返回文本，文字已经 yield 出去了
 
         # —— 模型要求调工具 ——
         messages.append({"role": "assistant", "content": content})

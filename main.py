@@ -12,7 +12,7 @@ os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"   # HuggingFace 国内镜像
 from dotenv import load_dotenv
 load_dotenv()
 
-
+CLI_SESSION_ID = "cli"
 from memory.conversation_summarizer import compress_history
 from memory.preference_extractor import extract_preferences
 from memory.preference_store import save_preferences
@@ -20,7 +20,7 @@ from config.settings import USER_ID
 from agents.agent_loop import run_agent
 from memory.session_store import save_session,load_session
 def main():
-    history = load_session()
+    history = load_session(CLI_SESSION_ID)
     while True:
         query = input("\n请输入问题，输入q退出：")
         if query.lower()== "q":
@@ -33,7 +33,7 @@ def main():
         history = compress_history(history)
         answer = run_agent(query,history)
         history.append({"role":"assistant","content":answer})
-        save_session(history)
+        save_session(CLI_SESSION_ID,history)
         print(answer)
 
 if __name__=="__main__":

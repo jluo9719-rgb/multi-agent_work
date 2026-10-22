@@ -28,7 +28,7 @@ ollama模型调用封装
 #     response.raise_for_status()
 #     data = response.json()
 #     return data["message"]["content"]
-
+import json
 import requests
 from config.settings import OLLAMA_BASE_URL,MODEL_NAME,MAX_TOKENS,API_KEY
 from anthropic import Anthropic
@@ -116,3 +116,121 @@ def chat_with_system(messages : list[dict],system : str="") -> str:
         if block.get("type") =="text":
             text.append(block.get("text",""))
     return "\n".join(text)
+
+
+
+def chat_stream_text(messages:list[dict],system:str="") ->str:
+    """
+    流式调用模型（暂不支持工具）。
+    每收到一段答案文字就打印出来，最终返回完整文本。
+    """
+    payload ={
+        "model":MODEL_NAME,
+        "max_tokens":MAX_TOKENS,
+        "messages":messages,
+        "stream":True,
+    }
+    if system:
+        payload['system']=system
+    response=requests.post(
+        f"{OLLAMA_BASE_URL}/v1/messages",
+        headers={
+            "Content-Type":"application/json",
+            "x-api-key":API_KEY,
+            "anthropic-version":"2023-06-01",
+        },
+        json=payload,
+        stream=True,
+        timeout=120,
+    )
+    response.raise_for_status()
+    full_text =[]
+    for line in response.iter_lines():
+        if not line:
+            continue
+        text =line.decode("utf-8")
+        if not text.startswith("data: "):
+            continue
+        data = json.loads(text[len("data: "):])
+        if data.get("type") !="content_block_delta":
+            continue
+        delta = data.get("delta",{})
+        if delta.get("type") !="text_delta":
+            continue
+        token = delta.get("text","")
+        full_text.append(token)
+        print(token,end="",flush=True)   #实时显示
+    print()
+    return "".join(full_text)
+
+
+#完整版本的流式打印
+def chat_stream_with_tools(messages,tools,system :str =""):
+    payload ={
+        "model":MODEL_NAME,
+        "max_tokens":MAX_TOKENS,
+        "messages":messages,
+        "tools":tools,
+        "stream":True,
+    }
+    if system:
+        payload['system'] =system
+    response = requests.post(
+            f"{OLLAMA_BASE_URL}/v1/messages",   # ← settings 里的地址
+            headers={
+                "Content-Type":"application/json",
+                "x-api-key":API_KEY,            # ← settings 里的 "ollama"
+                "anthropic-version":"2023-06-01",  # ← 固定值，Anthropic 协议要求的版本号
+            }, 
+            json= payload,
+            timeout=120,
+            stream=True,
+        )
+    response.raise_for_status()
+    blocks ={}
+    stop_reason = None
+    for line in response.iter_lines():
+        if not line:
+            continue
+        text = line.decode("utf-8")
+        if not text.startswith("data: "):
+            continue
+        json_str = text[len("data: "):]  
+        data = json.loads(json_str)
+        if data.get("type") == "content_block_start":
+            index= data.get("index")
+            raw = data.get("content_block")   # 里面有 type，可能还有 id、name
+            blocks[index] ={
+                "type":raw.get("type"),
+                "id":raw.get("id"),
+                "name":raw.get("name"),
+                "text":"",          #text块的文字积累
+                "thinking":"",      #thinking块的思考累计
+                "partial_json":"",  #tool_use块的参数碎片积累
+            }
+        elif data.get("type") =="content_block_delta":
+            index = data.get("index")
+            delta =data.get("delta",{})
+            if delta.get("type") =="text_delta":
+                blocks[index]["text"] +=delta["text"]
+                yield("text",delta["text"])
+            elif delta.get("type") =="thinking_delta":
+                blocks[index]["thinking"] += delta["thinking"]
+            elif delta.get("type") =="input_json_delta":
+                blocks[index]['partial_json'] +=delta["partial_json"]
+        elif data.get("type") =="message_delta":
+            stop_reason =data.get("delta",{}).get("stop_reason")
+    #print(blocks)  查看此时block是什么模样
+    content =[]
+    for index in sorted(blocks):
+        b =blocks[index]
+        if b["type"] =="thinking":
+            content.append({"type":"thinking","thinking":b["thinking"]})
+        elif b["type"] =="text":
+            content.append({"type":"text","text":b["text"]})
+        elif b["type"] == "tool_use":
+            input_query =json.loads(b["partial_json"]) if b["partial_json"] else {}
+            content.append({"type":"tool_use","id":b["id"],"name":b["name"],"input":input_query})
+    result = {"content":content,"stop_reason":stop_reason}
+    yield ("done", result)
+            

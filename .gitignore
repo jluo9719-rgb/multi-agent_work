@@ -4,3 +4,5 @@ __pycache__/
 entity_memory.db
 **/entity_memory.db
 .env
+test_api_stream.py
+test_stream.py
