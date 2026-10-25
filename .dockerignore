@@ -1,0 +1,10 @@
+.git
+.vscode
+__pycache__
+*.pyc
+chroma_db
+cache
+entity_memory.db
+.env
+test_*.py
+README.md

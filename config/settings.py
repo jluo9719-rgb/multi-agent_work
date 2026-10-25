@@ -9,10 +9,12 @@
 """
 
 #本地ollama模型
-OLLAMA_BASE_URL =  "http://localhost:11434"
+import os
+
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 MODEL_NAME = "qwen3:8b"
 MAX_TOKENS = 1000
 API_KEY = "ollama"
 HISTORY_COMPRESS_THRESHOLD = 2000
-USER_ID ="default_user"
+USER_ID = "default_user"
 DEBUG = False

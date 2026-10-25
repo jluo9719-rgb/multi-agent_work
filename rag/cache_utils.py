@@ -21,7 +21,10 @@ CHUNKS_CACHE_FILE = os.path.join(CACHE_DIR, "chunks_cache.json")  # chunks 缓�
 BM25_CACHE_FILE = os.path.join(CACHE_DIR, "bm25_index.pkl")         # BM25 索引缓存：存储序列化后的 BM25 模型
 
 # 文档路径（用于计算 hash，判断文档是否改变）
-DOC_PATH = r"D:\python projects\agent\RAG2\神火股份：河南神火煤电股份有限公司内部控制管理手册.txt"
+DOC_PATH = os.getenv(
+    "DOC_PATH",
+    r"D:\python projects\agent\RAG2\神火股份：河南神火煤电股份有限公司内部控制管理手册.txt",
+)
 
 # 代码版本号（每次修改切分逻辑后手动 +1，强制重新生成缓存）
 CODE_VERSION = "1.1"

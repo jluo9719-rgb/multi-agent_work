@@ -9,6 +9,7 @@ from sentence_transformers import SentenceTransformer, CrossEncoder
 from sklearn.metrics.pairwise import cosine_similarity
 
 from rag import cache_utils
+DOC_PATH = cache_utils.DOC_PATH
 
 # 路径钉死到项目根目录，不受运行目录影响
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -63,7 +64,7 @@ def generate_chunks():
     """
 
     # 读取文档
-    with open("d:\\python projects\\agent\\RAG2\\神火股份：河南神火煤电股份有限公司内部控制管理手册.txt", "r", encoding="utf-8") as f:
+    with open(DOC_PATH, "r", encoding="utf-8") as f:
         text =f.read()  #读取表格
         lines = [l for l in text.split('\n') if l.strip()]
         policy_text = '\n'.join(lines)

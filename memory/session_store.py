@@ -1,10 +1,17 @@
 import json
 import redis
+import os
+
+
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD") or None
 
 
 def _session_key(session_id:str) -> str:
     return f"session:{session_id}"
-r = redis.Redis(host="localhost",port=6379,socket_timeout=5)
+#r = redis.Redis(host="localhost",port=6379,socket_timeout=5)
+r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD, socket_timeout=5)
 
 def save_session(session_id : str,history: list[dict]) -> None:
     try:
