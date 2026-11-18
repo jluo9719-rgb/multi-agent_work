@@ -53,3 +53,43 @@ def retrieve_context(original_query : str,queries : list) -> str:
     reranker_indices = scores.argsort()[::-1]
     sorted_docs = [unique_docs[i] for i in reranker_indices]
     return "\n\n".join(sorted_docs[:5])
+
+
+#多agent的检索员里面重排序
+def retrieve_evidence(original_query, queries) -> list[str]:
+    contexts =[]
+    for query in queries:
+        context =retrieve_one_query(query)
+        if context:
+            contexts.extend(context)   #此时是一个很大的列表，这个列表里面有重复的内容
+    seen = set()
+    unique_docs = []
+    for doc in contexts:
+        if doc and doc not in seen:
+            seen.add(doc)
+            unique_docs.append(doc)
+    if not unique_docs:
+        return []
+    pairs=[[original_query,doc] for doc in unique_docs]
+    scores=reranker.predict(pairs)
+    reranker_indices = scores.argsort()[::-1]
+    sorted_docs = [unique_docs[i] for i in reranker_indices]
+    return sorted_docs[:10]
+
+
+#重排序多agent的检索内容
+def rerank_evidences(original_query, evidence,store:int =10) -> list[dict]:
+    seen = set()
+    unique_docs = []
+    for doc in evidence:
+        t = doc.get("text")
+        if t and t not in seen:
+            seen.add(t)
+            unique_docs.append(doc)
+    if not unique_docs:
+        return []
+    pairs=[[original_query,doc.get("text","")] for doc in unique_docs]
+    scores=reranker.predict(pairs)
+    reranker_indices = scores.argsort()[::-1]
+    sorted_docs = [unique_docs[i] for i in reranker_indices]
+    return sorted_docs[:store]
