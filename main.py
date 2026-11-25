@@ -8,7 +8,7 @@
 
 import os
 os.environ["NO_PROXY"] = "localhost,127.0.0.1"   
-os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"   # HuggingFace 国内镜像
+# os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"   # HuggingFace 国内镜像
 from dotenv import load_dotenv
 load_dotenv()
 

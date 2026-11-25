@@ -51,8 +51,11 @@ import re
 from llm.ollama_client import chat_with_system
 from rag.query_processor import build_search_queries
 from rag.retrieve import retrieve_evidence, rerank_evidences
+from memory.preference_store import load_preferences,format_preferences
+from config.settings import USER_ID
+from rag.query_processor import rewrite_query
 
-
+#审核员
 def review(question, evidence):
     r = []
     for i,doc in enumerate(evidence):
@@ -73,7 +76,7 @@ def review(question, evidence):
         result = {"okay":False,"missing":"审核员输出解析失败"}
     return result
        
-
+#检索员
 def retrieve(question, hint=None, max_queries=6) -> list[dict]:
     evidence =[]
     if hint:
@@ -93,39 +96,49 @@ def retrieve(question, hint=None, max_queries=6) -> list[dict]:
     return evidence
         
 
-
 #回答员
-def answer(question,evidence) -> str:
+def answer(question,evidence,prefs_text="",history =None) -> str:
     r=[]
     if not evidence:
         return "你的问题暂时无法回答，请稍后再试"
     for i,c in enumerate(evidence):
         r.append(f"资料{i}:{c.get('text','')}")
     text = "\n".join(r)
-    system_prompt ="""
-    你是公司智能客服，要根据检索到的参考资料组织语言回答用户问题，要和蔼可亲，回答的内容要根据资料来，资料里面没有的东西不要说，不要胡编乱造。只允许归纳总结，但不许补充资料外的信息。分点总结，字数尽量控制在300字以内。
+    system_prompt =f"""
+    你是公司智能客服，要根据检索到的参考资料组织语言回答用户问题，要和蔼可亲，参考资料是本次检索的事实来源，历史对话只用来理解用户指的是什么（比如“第三条”），两者冲突时以参考资料为准回答的内容要根据资料来，资料里面没有的东西不要说，不要胡编乱造。只允许归纳总结，但不许补充资料外的信息。分点总结，字数尽量控制在300字以内,其中{prefs_text}是系统用户的偏好，你要根据此偏好来回答。
     """
-    messages = [{"role":"user","content":f"问题：{question},\n\n参考资料：{text}"}]
+    if history:
+        messages = history[-4:]+[{"role":"user","content":f"问题：{question}\n\n参考资料：{text}"}]
+    else:
+        messages =[{"role":"user","content":f"问题：{question}\n\n参考资料：{text}"}]
     return chat_with_system(messages=messages,system=system_prompt)
+
         
 
 
-def run_multi_agent(question, max_rounds=2):
-    evidence = retrieve(question)
+#编排层
+def run_multi_agent(question,history=None, max_rounds=2):
+    prefs = load_preferences(USER_ID)
+    prefs_text = ("已知用户信息：\n"+format_preferences(prefs)) if prefs else ""
+    if history:
+        full_question = rewrite_query(question,history)
+    else:
+        full_question = question
+    evidence = retrieve(full_question)
     print(f"[检索]第一轮：{len(evidence)}")
-    verdict = review(question,evidence)
+    verdict = review(full_question,evidence)
     print(verdict)
     c=0
     while not verdict.get("okay")  and  c<max_rounds:
         missing = verdict.get("missing","")
         if not missing or missing=="审核员输出解析失败":
             break
-        result = retrieve(question,hint=missing)
+        result = retrieve(full_question,hint=missing)
         evidence = evidence+result
-        evidence = rerank_evidences(question,evidence)
+        evidence = rerank_evidences(full_question,evidence)
         print(f"去重后的条数：{len(evidence)}")
-        verdict = review(question,evidence)
+        verdict = review(full_question,evidence)
         c+=1
-    answers = answer(question,evidence)
+    answers = answer(full_question,evidence,prefs_text,history)
     return answers
             

@@ -1,4 +1,5 @@
 import os
+os.environ.setdefault("HF_HUB_OFFLINE", "1")   # 模型已本地缓存，跳过联网检查
 import re
 import shutil
 
