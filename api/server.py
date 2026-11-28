@@ -24,7 +24,7 @@ class EchoResponse(BaseModel):  #我们返回出去的数据长什么模样
 class ChatResponse(BaseModel):  #我们返回出去的数据长什么模样
     answer : str
 
-@app.post("/echo",response_model =ChatResponse)    #response_model=ChatResponse → 告诉 FastAPI："返回的数据按这个模型序列化"
+@app.post("/echo",response_model =EchoResponse)    #response_model=EchoResponse → 告诉 FastAPI："返回的数据按这个模型序列化"
 def echo(req : ChatRequest) -> ChatResponse:
 #传输中：req:  '{"session_id": "user-a", "message": "你好"}'     ← 文本（JSON 字符串）
 #程序里：req:   ChatRequest(session_id="user-a", message="你好")  ← 对象（ChatRequest 实例）
@@ -32,6 +32,7 @@ def echo(req : ChatRequest) -> ChatResponse:
     return EchoResponse(message=req.message)
 
 
+from agents.multi_agent_loop import run_multi_agent
 @app.post("/chat",response_model =ChatResponse)    
 def chat(req : ChatRequest) -> ChatResponse:
     prefs =extract_preferences(req.message)
@@ -40,7 +41,7 @@ def chat(req : ChatRequest) -> ChatResponse:
     history = load_session(req.session_id)
     history.append({"role":"user","content":req.message})
     history =compress_history(history)
-    answer = run_agent(req.message,history)
+    answer = run_multi_agent(req.message,history)   #不是流式这里是run_agent_stream
     history.append({"role":"assistant","content":answer})
     save_session(req.session_id,history)
     return ChatResponse(answer=answer)
@@ -58,6 +59,8 @@ def stream_demo():
         media_type="text/event-stream",
     )
 
+
+from agents.multi_agent_loop import run_multi_agent_stream  #流式输出
 @app.post("/chat/stream")   #流式
 def chat_stream(req:ChatRequest):
     def event_generator():
@@ -70,7 +73,7 @@ def chat_stream(req:ChatRequest):
         history =compress_history(history)
          # 第 2 步：遍历生成器，边收边发
         full_text = []
-        for token in run_agent_stream(req.message,history):  #token是一小段文字
+        for token in run_multi_agent_stream(req.message,history):  #不是流式这里是run_agent_stream。token是一小段文字
             full_text.append(token)
             yield f"data: {json.dumps({'text': token}, ensure_ascii=False)}\n\n"
         # 第 3 步：流结束后，收尾
