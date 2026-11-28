@@ -94,7 +94,7 @@ def run_agent(query: str, history: list[dict], max_rounds: int = 5) -> str:
             elif block["name"] == "search_google":
                 try:
                     valid = SearchInput(**block["input"])
-                    result = search_google(valid.query)
+                    result = search_google(valid.query) or "搜索失败"
                 except Exception as e:
                     result = f"搜索失败：{e}"
             else:
@@ -176,7 +176,7 @@ def run_agent_stream(query: str, history: list[dict], max_rounds: int = 5):
             elif block["name"] == "search_google":
                 try:
                     valid = SearchInput(**block["input"])
-                    result = search_google(valid.query)
+                    result = search_google(valid.query) or "搜索失败"
                 except Exception as e:
                     result = f"搜索失败：{e}"
             else:

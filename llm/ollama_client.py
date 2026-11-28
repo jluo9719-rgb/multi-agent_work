@@ -234,3 +234,43 @@ def chat_stream_with_tools(messages,tools,system :str =""):
     result = {"content":content,"stop_reason":stop_reason}
     yield ("done", result)
             
+
+def chat_stream_text_yield(messages,system=""):
+    """
+    流式调用模型（暂不支持工具）。
+    每收到一段答案文字就打印出来
+    """
+    payload ={
+        "model":MODEL_NAME,
+        "max_tokens":MAX_TOKENS,
+        "messages":messages,
+        "stream":True,
+    }
+    if system:
+        payload['system']=system
+    response=requests.post(
+        f"{OLLAMA_BASE_URL}/v1/messages",
+        headers={
+            "Content-Type":"application/json",
+            "x-api-key":API_KEY,
+            "anthropic-version":"2023-06-01",
+        },
+        json=payload,
+        stream=True,
+        timeout=120,
+    )
+    response.raise_for_status()
+    for line in response.iter_lines():
+        if not line:
+            continue
+        text =line.decode("utf-8")
+        if not text.startswith("data: "):
+            continue
+        data = json.loads(text[len("data: "):])
+        if data.get("type") !="content_block_delta":
+            continue
+        delta = data.get("delta",{})
+        if delta.get("type") !="text_delta":
+            continue
+        token = delta.get("text","")
+        yield token  #实时显示

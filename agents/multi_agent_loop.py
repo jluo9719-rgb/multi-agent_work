@@ -54,6 +54,8 @@ from rag.retrieve import retrieve_evidence, rerank_evidences
 from memory.preference_store import load_preferences,format_preferences
 from config.settings import USER_ID
 from rag.query_processor import rewrite_query
+from tools.search_tool import search_google
+from llm.ollama_client import chat_stream_text_yield
 
 #审核员
 def review(question, evidence):
@@ -89,10 +91,13 @@ def retrieve(question, hint=None, max_queries=6) -> list[dict]:
     else:
         queries =build_search_queries(question)[:max_queries]
     docs = retrieve_evidence(question,queries)
-    if not docs:
-        return []
     for c in docs:
         evidence.append({"text":c,"source":""})
+    if hint:
+        web_q = f"{question}{' '.join(queries)}"   #拼起来搜一次
+        web = search_google(web_q)
+        if web:
+            evidence.append({"text":web,"source":"web"})
     return evidence
         
 
@@ -105,7 +110,7 @@ def answer(question,evidence,prefs_text="",history =None) -> str:
         r.append(f"资料{i}:{c.get('text','')}")
     text = "\n".join(r)
     system_prompt =f"""
-    你是公司智能客服，要根据检索到的参考资料组织语言回答用户问题，要和蔼可亲，参考资料是本次检索的事实来源，历史对话只用来理解用户指的是什么（比如“第三条”），两者冲突时以参考资料为准回答的内容要根据资料来，资料里面没有的东西不要说，不要胡编乱造。只允许归纳总结，但不许补充资料外的信息。分点总结，字数尽量控制在300字以内,其中{prefs_text}是系统用户的偏好，你要根据此偏好来回答。
+    你是公司智能客服，要根据检索到的参考资料组织语言回答用户问题，要和蔼可亲，参考资料是本次检索的事实来源，历史对话只用来理解用户指的是什么（比如“第三条”），两者冲突时以参考资料为准回答的内容要根据资料来，资料里面没有的东西不要说，不要胡编乱造。回答涉及具体数字时，必须核对该数字所属的年份、期间、主体是否与用户问题一致。资料中出现多年份对比（如"2025年/2024年/2023年"）时，只取用户问题所问年份的那一列，不得混用。资料若来自后续年份的报告（如用2025年报说明2024数据），表中"本年""比上年"等表述指的是报告发布年份，不是用户所问年份。引用增长率时必须核对它属于哪一年。资料中的百分比、同比等衍生指标，除非能明确确认归属年份，否则不要引用，只给出原始数值。如果无法确定数字归属，就说"资料中的年份对应关系不明确"，不要猜测。只允许归纳总结，但不许补充资料外的信息。分点总结，字数尽量控制在300字以内,其中{prefs_text}是系统用户的偏好，你要根据此偏好来回答。
     """
     if history:
         messages = history[-4:]+[{"role":"user","content":f"问题：{question}\n\n参考资料：{text}"}]
@@ -113,7 +118,24 @@ def answer(question,evidence,prefs_text="",history =None) -> str:
         messages =[{"role":"user","content":f"问题：{question}\n\n参考资料：{text}"}]
     return chat_with_system(messages=messages,system=system_prompt)
 
-        
+#流式输出回答
+def answer_stream(question,evidence,prefs_text="",history=None):
+    r=[]
+    if not evidence:
+        yield "你的问题暂时无法回答，请稍后再试"  
+        return
+    for i,c in enumerate(evidence):
+        r.append(f"资料{i}:{c.get('text','')}")
+    text = "\n".join(r) 
+    system_prompt =f"""
+    你是公司智能客服，要根据检索到的参考资料组织语言回答用户问题，要和蔼可亲，参考资料是本次检索的事实来源，历史对话只用来理解用户指的是什么（比如“第三条”），两者冲突时以参考资料为准回答的内容要根据资料来，资料里面没有的东西不要说，不要胡编乱造。回答涉及具体数字时，必须核对该数字所属的年份、期间、主体是否与用户问题一致。资料中出现多年份对比（如"2025年/2024年/2023年"）时，只取用户问题所问年份的那一列，不得混用。资料若来自后续年份的报告（如用2025年报说明2024数据），表中"本年""比上年"等表述指的是报告发布年份，不是用户所问年份。引用增长率时必须核对它属于哪一年。资料中的百分比、同比等衍生指标，除非能明确确认归属年份，否则不要引用，只给出原始数值。如果无法确定数字归属，就说"资料中的年份对应关系不明确"，不要猜测。只允许归纳总结，但不许补充资料外的信息。分点总结，字数尽量控制在300字以内,其中{prefs_text}是系统用户的偏好，你要根据此偏好来回答。
+    """
+    if history:
+        messages = history[-4:]+[{"role":"user","content":f"问题：{question}\n\n参考资料：{text}"}]
+    else:
+        messages =[{"role":"user","content":f"问题：{question}\n\n参考资料：{text}"}]
+    for token in chat_stream_text_yield(messages=messages,system=system_prompt):
+        yield token
 
 
 #编排层
@@ -142,3 +164,28 @@ def run_multi_agent(question,history=None, max_rounds=2):
     answers = answer(full_question,evidence,prefs_text,history)
     return answers
             
+#流式输出编排层
+def run_multi_agent_stream(question,history=None, max_rounds=2):
+    prefs = load_preferences(USER_ID)
+    prefs_text = ("已知用户信息：\n"+format_preferences(prefs)) if prefs else ""
+    if history:
+        full_question = rewrite_query(question,history)
+    else:
+        full_question = question
+    evidence = retrieve(full_question)
+    print(f"[检索]第一轮：{len(evidence)}")
+    verdict = review(full_question,evidence)
+    print(verdict)
+    c=0
+    while not verdict.get("okay")  and  c<max_rounds:
+        missing = verdict.get("missing","")
+        if not missing or missing=="审核员输出解析失败":
+            break
+        result = retrieve(full_question,hint=missing)
+        evidence = evidence+result
+        evidence = rerank_evidences(full_question,evidence)
+        print(f"去重后的条数：{len(evidence)}")
+        verdict = review(full_question,evidence)
+        c+=1
+    for token in answer_stream(full_question,evidence,prefs_text,history):
+        yield token

@@ -79,17 +79,19 @@ def retrieve_evidence(original_query, queries) -> list[str]:
 
 #重排序多agent的检索内容
 def rerank_evidences(original_query, evidence,store:int =10) -> list[dict]:
+    web_items = [d for d in evidence if d.get("source")=="web"]
+    doc_items = [d for d in evidence if d.get("source")!= "web"]
     seen = set()
     unique_docs = []
-    for doc in evidence:
+    for doc in doc_items:
         t = doc.get("text")
         if t and t not in seen:
             seen.add(t)
             unique_docs.append(doc)
     if not unique_docs:
-        return []
+        return web_items
     pairs=[[original_query,doc.get("text","")] for doc in unique_docs]
     scores=reranker.predict(pairs)
     reranker_indices = scores.argsort()[::-1]
     sorted_docs = [unique_docs[i] for i in reranker_indices]
-    return sorted_docs[:store]
+    return sorted_docs[:store]+web_items
